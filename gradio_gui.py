@@ -1,7 +1,18 @@
+from pathlib import Path
+
 import gradio as gr
 import upscaler
-import os
-from PIL import Image
+import tempfile
+import atexit
+import uuid
+
+# Temporary directory for output images
+TEMP_PATH = tempfile.TemporaryDirectory()
+atexit.register(TEMP_PATH.cleanup)
+
+
+def get_temp_name(uid_length: int = 8) -> Path:
+    return Path(TEMP_PATH.name) / f"tmp_{uuid.uuid4().hex[:uid_length]}.png"
 
 
 def upscale_image(
@@ -16,7 +27,7 @@ def upscale_image(
     xformers_input=False,
     cpu_offload_input=False,
     attention_slicing_input=False,
-):
+) -> str:
     cols = rows
     output_image = upscaler.upscale_image(
         image,
@@ -32,10 +43,10 @@ def upscale_image(
         guidance,
         iterations,
     )
-    output_image_path = "result.png"
-    output_image.save(output_image_path)
 
-    return output_image_path
+    output_image_path = get_temp_name()
+    output_image.save(output_image_path)
+    return str(output_image_path)
 
 
 image_input = gr.inputs.Image(label="Input Image")
@@ -68,13 +79,6 @@ guidance = gr.Slider(
     2, 15, 7, step=1, label="Guidance Scale: How much the AI influences the Upscaling."
 )
 iterations = gr.Slider(10, 75, 50, step=1, label="Number of Iterations")
-# save_png_button, save_png_halfsize_button ; I don't know how to implement them
-save_png_button = gr.Button(
-    label="Save as a PNG image"
-)  # Added this button with the save_png function
-save_png_halfsize_button = gr.Button(
-    label="Save as a PNG image (half size)"
-)  # Added this button with the save_png_halfsize function
 
 gr.Interface(
     fn=upscale_image,
