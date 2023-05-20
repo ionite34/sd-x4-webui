@@ -49,53 +49,61 @@ def upscale_image(
     return str(output_image_path)
 
 
-image_input = gr.inputs.Image(label="Input Image")
-prompt_input = gr.inputs.Textbox(
-    default="8k, photography, cgi, unreal engine, octane render, best quality",
-    label="Prompt",
-)
-negative_prompt_input = gr.inputs.Textbox(
-    default="jpeg artifacts, lowres, bad quality", label="Negative prompt"
-)
-seed_input = gr.inputs.Number(default=-1, label="Seed")
-row_input = gr.inputs.Number(
-    default=1, label="Tile grid dimension amount (number of rows and columns) - v x v"
-)
-xformers_input = gr.inputs.Checkbox(
-    default=True, label="Enable Xformers memory efficient attention"
-)
-enable_custom_sliders = gr.inputs.Checkbox(
-    default=False,
-    label="(NOT RECOMMENDED) Click to enable the sliders below; if unchecked, it will ignore them and use the default settings",
-)
-cpu_offload_input = gr.inputs.Checkbox(
-    default=True, label="Enable sequential CPU offload"
-)
-attention_slicing_input = gr.inputs.Checkbox(
-    default=True, label="Enable attention slicing"
-)
-output_image = gr.outputs.Image(label="Output Image", type="pil")
-guidance = gr.Slider(
-    2, 15, 7, step=1, label="Guidance Scale: How much the AI influences the Upscaling."
-)
-iterations = gr.Slider(10, 75, 50, step=1, label="Number of Iterations")
+with gr.Blocks() as block:
+    image_input = gr.Image(label="Input Image")
+    with gr.Row():
+        image_width_input = gr.Number(value=512, interactive=True, label="Source Image Width")
+        image_height_input = gr.Number(value=512, interactive=True, label="Source Image Height")
 
-gr.Interface(
-    fn=upscale_image,
-    inputs=[
-        prompt_input,
-        negative_prompt_input,
-        row_input,
-        seed_input,
-        image_input,
-        enable_custom_sliders,
-        guidance,
-        iterations,
-        xformers_input,
-        cpu_offload_input,
-        attention_slicing_input,
-    ],
-    outputs=[output_image],
-    title="Stable Diffusion x4 Upscaler - Web GUI",
-    allow_flagging="never",
-).launch(server_port=7865)
+    @image_input.change
+    def on_image_change():
+        """Update the image width and height when the image is changed."""
+        image_width_input.value = image_input.value.shape[1]
+        image_height_input.value = image_input.value.shape[0]
+
+
+    prompt_input = gr.Textbox(label="Prompt")
+    negative_prompt_input = gr.Textbox(label="Negative prompt")
+    seed_input = gr.Number(-1, label="Seed")
+    row_input = gr.Number(
+        1, label="Tile grid dimension amount (number of rows and columns) - v x v"
+    )
+    xformers_input = gr.Checkbox(
+        True, label="Enable Xformers memory efficient attention"
+    )
+    enable_custom_sliders = gr.Checkbox(
+        False,
+        label="(NOT RECOMMENDED) Click to enable the sliders below; if unchecked, it will ignore them and use the default settings",
+    )
+    cpu_offload_input = gr.Checkbox(
+        True, label="Enable sequential CPU offload"
+    )
+    attention_slicing_input = gr.Checkbox(
+        True, label="Enable attention slicing"
+    )
+    output_image = gr.Image(label="Output Image", type="pil")
+    guidance = gr.Slider(
+        2, 15, 7, step=1, label="Guidance Scale: How much the AI influences the Upscaling."
+    )
+    iterations = gr.Slider(10, 75, 50, step=1, label="Number of Iterations")
+
+    button = gr.Button("Upscale Image")
+    button.click(
+        fn=upscale_image,
+        inputs=[
+            prompt_input,
+            negative_prompt_input,
+            row_input,
+            seed_input,
+            image_input,
+            enable_custom_sliders,
+            guidance,
+            iterations,
+            xformers_input,
+            cpu_offload_input,
+            attention_slicing_input,
+        ],
+        outputs=[output_image],
+    )
+
+block.launch(server_port=7865)
