@@ -1,3 +1,4 @@
+import warnings
 from PIL import Image
 from diffusers import StableDiffusionUpscalePipeline
 import torch
@@ -54,11 +55,13 @@ def upscale_image(img, rows, cols,seed,prompt,negative_prompt,xformers,cpu_offlo
         pipeline.enable_xformers_memory_efficient_attention()
     else:
         pipeline.disable_xformers_memory_efficient_attention()
+
     if cpu_offload:
         try:
             pipeline.enable_sequential_cpu_offload()
-        except:
-            pass
+        except Exception as e:
+            warnings.warn(f"Could not enable sequential CPU offload: {e}")
+
     if attention_slicing:
         pipeline.enable_attention_slicing()
     else:
