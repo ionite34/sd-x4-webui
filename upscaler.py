@@ -3,6 +3,7 @@ from PIL import Image
 from diffusers import StableDiffusionUpscalePipeline
 import torch
 from split_image import split
+from itertools import product
 import os
 import random
 
@@ -24,8 +25,9 @@ def split_image(im, rows, cols, should_square, should_quiet=False):
         bg_color = split.determine_bg_color(im)
         if not should_quiet:
             print("Background color is... " + str(bg_color))
-        im_r = Image.new("RGBA" if ext == "png" else "RGB",
-                         (max_dimension, max_dimension), bg_color)
+        im_r = Image.new(
+            "RGBA" if ext == "png" else "RGB", (max_dimension, max_dimension), bg_color
+        )
         offset = int((max_dimension - min_dimension) / 2)
         if im_width > im_height:
             im_r.paste(im, (0, offset))
@@ -34,22 +36,42 @@ def split_image(im, rows, cols, should_square, should_quiet=False):
         im = im_r
         row_width = int(max_dimension / cols)
         row_height = int(max_dimension / rows)
-    n = 0
-    for i in range(0, rows):
-        for j in range(0, cols):
-            box = (j * row_width, i * row_height, j * row_width +
-                   row_width, i * row_height + row_height)
-            outp = im.crop(box)
-            outp_path = name + "_" + str(n) + ext
-            if not should_quiet:
-                print("Exporting image tile: " + outp_path)
-            images.append(outp)
-            n += 1
+
+    for n, (i, j) in enumerate(product(range(rows), range(cols))):
+        box = (
+            j * row_width,
+            i * row_height,
+            j * row_width + row_width,
+            i * row_height + row_height,
+        )
+        out_image = im.crop(box)
+        images.append(out_image)
+
+        if not should_quiet:
+            out_image_path = f"{name}_{n}{ext}"
+            print("Exporting image tile: " + out_image_path)
+
     return [img for img in images]
 
-def upscale_image(img, rows, cols,seed,prompt,negative_prompt,xformers,cpu_offload,attention_slicing,enable_custom_sliders=False,guidance=7,iterations=50):
+
+def upscale_image(
+    img,
+    rows,
+    cols,
+    seed,
+    prompt,
+    negative_prompt,
+    xformers,
+    cpu_offload,
+    attention_slicing,
+    enable_custom_sliders=False,
+    guidance=7,
+    iterations=50,
+):
     model_id = "stabilityai/stable-diffusion-x4-upscaler"
-    pipeline = StableDiffusionUpscalePipeline.from_pretrained(model_id, torch_dtype=torch.float16)
+    pipeline = StableDiffusionUpscalePipeline.from_pretrained(
+        model_id, torch_dtype=torch.float16
+    )
     pipeline = pipeline.to("cuda")
     if xformers:
         pipeline.enable_xformers_memory_efficient_attention()
@@ -67,25 +89,37 @@ def upscale_image(img, rows, cols,seed,prompt,negative_prompt,xformers,cpu_offlo
     else:
         pipeline.disable_attention_slicing()
     img = Image.fromarray(img)
+
     # load model and scheduler
-    if seed==-1:
+    if seed == -1:
         generator = torch.manual_seed(random.randint(0, 9999999))
     else:
         generator = torch.manual_seed(seed)
-    
+
     original_width, original_height = img.size
     max_dimension = max(original_width, original_height)
     tiles = split_image(img, rows, cols, True, False)
     ups_tiles = []
-    i = 0
+
     for x in tiles:
-        i=i+1
         if enable_custom_sliders:
-            ups_tile = pipeline(prompt=prompt,negative_prompt=negative_prompt,guidance_scale=guidance, num_inference_steps=iterations, image=x.convert("RGB"),generator=generator).images[0]
+            ups_tile = pipeline(
+                prompt=prompt,
+                negative_prompt=negative_prompt,
+                guidance_scale=guidance,
+                num_inference_steps=iterations,
+                image=x.convert("RGB"),
+                generator=generator,
+            ).images[0]
         else:
-            ups_tile = pipeline(prompt=prompt,negative_prompt=negative_prompt, image=x.convert("RGB"),generator=generator).images[0]
+            ups_tile = pipeline(
+                prompt=prompt,
+                negative_prompt=negative_prompt,
+                image=x.convert("RGB"),
+                generator=generator,
+            ).images[0]
         ups_tiles.append(ups_tile)
-        
+
     # Determine the size of the merged upscaled image
     total_width = 0
     total_height = 0
@@ -97,10 +131,12 @@ def upscale_image(img, rows, cols,seed,prompt,negative_prompt,xformers,cpu_offlo
         tsize = x.width
         break
 
-    ups_times = abs(side/tsize)
+    print(f"side={side}, tsize={tsize}")
+
+    ups_times = abs(side / tsize)
     new_size = (max_dimension * ups_times, max_dimension * ups_times)
-    total_width = cols*side
-    total_height = rows*side
+    total_width = cols * side
+    total_height = rows * side
 
     # Create a blank image with the calculated size
     merged_image = Image.new("RGB", (total_width, total_height))
@@ -108,13 +144,13 @@ def upscale_image(img, rows, cols,seed,prompt,negative_prompt,xformers,cpu_offlo
     # Paste each upscaled tile into the blank image
     current_width = 0
     current_height = 0
-    maximum_width = cols*side
+    maximum_width = cols * side
     for ups_tile in ups_tiles:
         merged_image.paste(ups_tile, (current_width, current_height))
         current_width += ups_tile.width
-        if current_width>=maximum_width:
+        if current_width >= maximum_width:
             current_width = 0
-            current_height = current_height+side
+            current_height = current_height + side
 
     # Using the center of the image as pivot, crop the image to the original dimension times four
     crop_left = (new_size[0] - original_width * ups_times) // 2
@@ -124,5 +160,4 @@ def upscale_image(img, rows, cols,seed,prompt,negative_prompt,xformers,cpu_offlo
     final_img = merged_image.crop((crop_left, crop_upper, crop_right, crop_lower))
 
     # The resulting image should be identical to the original image in proportions / aspect ratio, with no loss of elements.
-    # Save the merged image
     return final_img
